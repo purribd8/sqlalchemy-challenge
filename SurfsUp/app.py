@@ -4,7 +4,7 @@ import numpy as np
 
 from sqlalchemy.ext.automap import automap_base
 from sqlalchemy.orm import Session
-from sqlalchemy import create_engine, func
+from sqlalchemy import create_engine, func, text
 
 from flask import Flask, jsonify
 
@@ -46,7 +46,7 @@ app = Flask(__name__)
 @app.route("/")
 def welcome():
     return (
-        f"Welcome to the Hawaii Climate Analysis API!!!<br/>"
+        f"Welcome to the Hawaii Climate Analysis API!<br/>"
         f"Available Routes:<br/>"
         f"/api/v1.0/precipitation<br/>"
         f"/api/v1.0/stations<br/>"
@@ -78,6 +78,7 @@ def stations():
     stations = list(np.ravel(results))
     return jsonify(stations=stations)
 
+
 @app.route("/api/v1.0/tobs")
 def temp():
     prev_year = dt.date(2017, 8, 23) - dt.timedelta(days=365)
@@ -91,29 +92,37 @@ def temp():
     return jsonify(temps=temps)
 
 
+@app.route("/api/v1.0/temp/<start>")
+@app.route("/api/v1.0/temp/<start>/<end>")
+def stats(start=None, end=None):
+    """Return TMIN, TAVG, TMAX."""
 
-@app.route("/api/v1.0/temp/start/end")
-def tobs_start_end(self, start, end):
+    # Select statement
+    sel = [func.min(Measurement.tobs), func.avg(Measurement.tobs), func.max(Measurement.tobs)]
 
-    query = f"""
-            SELECT
-                min(tobs) as min_temp,
-                avg(tobs) as avg_temp,
-                max(tobs)as max_temp
-            FROM
-                measurement
-            WHERE
-                date >= '{start}'
-                and date < '{end}';
-            """
+    if not end:
+        start = dt.datetime.strptime(start, "%m%d%Y")
+        results = session.query(*sel).\
+            filter(Measurement.date >= start).all()
 
-        df = pd.read_sql(text(query), con = self.engine)
-        data = df.to_dict(orient="records")
-        return(data)
+        session.close()
+
+        temps = list(np.ravel(results))
+        return jsonify(temps)
+
+    # calculate TMIN, TAVG, TMAX with start and stop
+    start = dt.datetime.strptime(start, "%m%d%Y")
+    end = dt.datetime.strptime(end, "%m%d%Y")
+
+    results = session.query(*sel).\
+        filter(Measurement.date >= start).\
+        filter(Measurement.date <= end).all()
 
     session.close()
-    data = sql.query_tobs_start_end(start, end)
-    return(jsonify(data))
+
+    # Unravel results into a 1D array and convert to a list
+    temps = list(np.ravel(results))
+    return jsonify(temps=temps)
 
 
 if __name__ == '__main__':
